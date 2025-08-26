@@ -1,0 +1,15 @@
+{
+    "language": "Kotlin",
+    "keywords": [
+        "package", "import", "class", "object", "interface", "fun", "val", "var", "if", "else",
+        "try", "catch", "finally", "for", "while", "do", "return", "in", "is", "when",
+        "as", "break", "continue", "throw", "this", "super", "true", "false", "null",
+        "data", "sealed", "enum", "companion", "override", "open", "abstract", "private",
+        "public", "protected", "internal", "lateinit", "suspend", "inline", "noinline",
+        "crossinline", "reified", "typealias"
+    ],
+    "singleLineComment": "//",
+    "multiLineCommentStart": "/*",
+    "multiLineCommentEnd": "*/",
+    "stringDelims": ["\"", "'"]
+}

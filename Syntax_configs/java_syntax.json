@@ -1,0 +1,13 @@
+{
+    "language": "Java",
+    "keywords": [
+        "class", "interface", "enum", "extends", "implements", "public", "private",
+        "protected", "static", "final", "void", "int", "double", "boolean", "new",
+        "return", "if", "else", "for", "while", "try", "catch", "finally", "switch",
+        "case", "break", "continue", "this", "super", "null", "true", "false"
+    ],
+    "singleLineComment": "//",
+    "multiLineCommentStart": "/*",
+    "multiLineCommentEnd": "*/",
+    "stringDelims": ["\"", "'"]
+}

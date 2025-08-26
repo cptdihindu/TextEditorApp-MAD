@@ -1,0 +1,13 @@
+{
+    "language": "Python",
+    "keywords": [
+        "def", "class", "return", "if", "elif", "else", "for", "while", "try", "except",
+        "finally", "import", "from", "as", "in", "is", "and", "or", "not", "True",
+        "False", "None", "with", "yield", "lambda", "pass", "break", "continue",
+        "global", "nonlocal", "assert", "raise"
+    ],
+    "singleLineComment": "#",
+    "multiLineCommentStart": "'''",
+    "multiLineCommentEnd": "'''",
+    "stringDelims": ["\"", "'"]
+}

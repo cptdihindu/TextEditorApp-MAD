@@ -1,0 +1,13 @@
+{
+    "language": "HTML",
+    "keywords": [
+        "html", "head", "title", "body", "div", "span", "p", "a", "img", "table", "tr", "td",
+        "th", "form", "input", "button", "select", "option", "textarea", "h1", "h2", "h3",
+        "h4", "h5", "h6", "ul", "ol", "li", "meta", "link", "script", "style", "header",
+        "footer", "section", "article", "nav", "aside"
+    ],
+    "singleLineComment": null,
+    "multiLineCommentStart": "<!--",
+    "multiLineCommentEnd": "-->",
+    "stringDelims": ["\"", "'"]
+}
