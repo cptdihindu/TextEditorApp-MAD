@@ -49,9 +49,10 @@ cd TextEditorApp-MAD
 
 **Project Structure**:
 ```
-/App/       → Android Studio project (Kotlin + Jetpack Compose)
-/Server/    → Flask server (server.py)
-/Builds/    → Installable APK
+/App/             → Android Studio project (Kotlin + Jetpack Compose)
+/Server/          → Flask server (server.py)
+/Builds/          → Installable APK
+/Syntax_configs/  → Sample JSON configs
 ```
 2. Install the APK from `Builds/KTextEdit-v1.0.apk` into your phone
   
