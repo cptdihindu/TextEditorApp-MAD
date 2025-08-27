@@ -8,12 +8,19 @@ A powerful **text editor app** with Kotlin syntax highlighting and a compiler br
 ## ✨ Features
 
 - 📝 **Edit & Save**: Create, open, and save text or code files.
+
 - 🔄 **Undo/Redo**: Effortlessly undo or redo changes.
+
 - 📊 **Word/Character Count**: Track your progress in real-time.
+
 - 🔍 **Find & Replace**: Search with case-sensitive and whole-word options.
+
 - 🎨 **Syntax Highlighting**: Supports Kotlin syntax highlighting natively. Custom JSON config can load for syntax highlighting of a specific language.
+
 - ⚙️ **Compile Kotlin**: Seamlessly compile Kotlin code using a Flask server and ADB bridge and view output in the app.
+
 - 🚨 **Error Highlighting**: View compiler errors with line numbers directly in the editor.
+
 - 📱 **Mobile-First**: Optimized for Android 9+ with a clean, intuitive UI.
 
 ---
@@ -106,4 +113,4 @@ cd TextEditorApp-MAD
 
 ## ⚠️ Notes
 
-- App will only show the outputs/erros in the code. that means no user interactions while program running 
+- App will only show the outputs/erros in the code. that means no user interactions while program running.
