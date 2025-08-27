@@ -74,6 +74,7 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
+
     // ----- Added for assignment features -----
     // Editor with syntax highlighting, find/replace, error lines
     implementation("io.github.amrdeveloper:codeview:1.3.9")

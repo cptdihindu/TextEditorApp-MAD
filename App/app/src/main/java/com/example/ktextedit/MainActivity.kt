@@ -70,6 +70,12 @@ import androidx.core.widget.addTextChangedListener
 import androidx.core.graphics.toColorInt
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState as rememberHScrollState
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.NavigationDrawerItem
+import kotlinx.coroutines.launch
 
 // ---------- Simple Undo/Redo ----------
 class UndoRedoManager {
@@ -424,7 +430,6 @@ fun EditorApp() {
 
     val fileName = currentUri?.let { displayName(ctx.contentResolver, it) } ?: "untitled"
     val titleText = (if (isDirty) "*" else "") + fileName
-    var menuOpen by remember { mutableStateOf(false) }
 
     // Back dismiss for the Find panel
     BackHandler(enabled = showFind) { showFind = false }
@@ -454,465 +459,520 @@ fun EditorApp() {
     // IME visibility (no nullable lambdas in Scaffold)
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Filled.Menu, contentDescription = "Menu")
+    // ------- Drawer state & scope -------
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                modifier = Modifier.width(200.dp)   // keep drawer flush left
+            ) {
+
+                Text(
+                    "Menu",
+                    modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp),
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+
+                // Toggles
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(start = 16.dp),
+                    label = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Checkbox(checked = isDark, onCheckedChange = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Dark mode", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    selected = false,
+                    onClick = { isDark = !isDark; scope.launch { drawerState.close() } }
+                )
+
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(start = 16.dp),
+                    label = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Checkbox(checked = wrapEnabled, onCheckedChange = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text("Word wrap", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    selected = false,
+                    onClick = { wrapEnabled = !wrapEnabled; scope.launch { drawerState.close() } }
+                )
+
+                HorizontalDivider()
+
+                // File actions
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(start = 16.dp),
+                    label = { Text("New", fontWeight = FontWeight.Bold) },
+                    selected = false,
+                    onClick = {
+                        currentText = ""
+                        currentUri = null
+                        lastManualSavedText = ""
+                        undoMgr.setInitial("")
+                        codeViewRef?.setText("")
+                        codeViewRef?.resetSyntaxPatternList()
+                        applyKotlinSyntax(codeViewRef, isDark)
+                        // Clear errors
+                        errorLines = emptySet()
+                        codeViewRef?.text?.let { ed -> errorHighlighter.clear(ed) }
+                        gutterRef?.setErrorLines(emptySet())
+                        status = "New file"
+                        scope.launch { drawerState.close() }
                     }
-                },
-                title = { Text(titleText, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            if (currentUri == null) {
-                                saveAsLauncher.launch(suggestFileNameForLang(codeViewRef))
-                            } else if (fileName.endsWith(".kt", true)) {
-                                compileThroughBridge(currentText, fileName, serverUrl) { ok, errors, output ->
-                                    if (ok) {
-                                        errorLines = emptySet()
-                                        codeViewRef?.text?.let { ed -> errorHighlighter.clear(ed) }
-                                        gutterRef?.setErrorLines(emptySet())
+                )
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(start = 16.dp),
+                    label = { Text("Open…", fontWeight = FontWeight.Bold) },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        openLauncher.launch(arrayOf("*/*"))
+                    }
+                )
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(start = 16.dp),
+                    label = { Text("Save", fontWeight = FontWeight.Bold) },
+                    selected = false,
+                    onClick = {
+                        if (currentUri == null) {
+                            saveAsLauncher.launch(suggestFileNameForLang(codeViewRef))
+                        } else {
+                            writeTextToUri(ctx.contentResolver, currentUri!!, currentText)
+                            lastManualSavedText = currentText
+                            status = "Saved"
+                        }
+                        scope.launch { drawerState.close() }
+                    }
+                )
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(start = 16.dp),
+                    label = { Text("Save As…", fontWeight = FontWeight.Bold) },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        saveAsLauncher.launch(suggestFileNameForLang(codeViewRef))
+                    }
+                )
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(start = 16.dp),
+                    label = { Text("Load Syntax…", fontWeight = FontWeight.Bold) },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        loadSyntaxLauncher.launch(arrayOf("application/json", "text/plain"))
+                    }
+                )
 
-                                        resultsTitle = "Program Output"
-                                        resultsText = if (output.isBlank()) "(no output)" else output
-                                        showResults = true
-                                        status = "Compiled successfully"
-                                    } else if (errors.isNotEmpty()) {
-                                        val lines = errors.map { it.line.coerceAtLeast(1) }.toSet()
-                                        errorLines = lines
-                                        codeViewRef?.let { cv ->
-                                            val ed = cv.text
-                                            if (ed != null) {
-                                                errorHighlighter.applyToLines(ed, ed.toString(), lines)
-                                            }
-                                        }
-                                        gutterRef?.setErrorLines(lines)
+                HorizontalDivider()
 
-                                        val sb = buildString {
-                                            errors.forEach { e ->
-                                                append("Line ${e.line}: ${e.message}\n")
+                NavigationDrawerItem(
+                    modifier = Modifier.padding(start = 16.dp),
+                    label = { Text("Compile Settings", fontWeight = FontWeight.Bold) },
+                    selected = false,
+                    onClick = {
+                        showSettingsDialog = true
+                        scope.launch { drawerState.close() }
+                    }
+                )
+            }
+        }
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Menu")
+                        }
+                    },
+                    title = { Text(titleText, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    actions = {
+                        IconButton(
+                            onClick = {
+                                val fileName = currentUri?.let { displayName(ctx.contentResolver, it) } ?: "untitled"
+                                if (currentUri == null) {
+                                    saveAsLauncher.launch(suggestFileNameForLang(codeViewRef))
+                                } else if (fileName.endsWith(".kt", true)) {
+                                    compileThroughBridge(currentText, fileName, serverUrl) { ok, errors, output ->
+                                        if (ok) {
+                                            errorLines = emptySet()
+                                            codeViewRef?.text?.let { ed -> errorHighlighter.clear(ed) }
+                                            gutterRef?.setErrorLines(emptySet())
+
+                                            resultsTitle = "Program Output"
+                                            resultsText = if (output.isBlank()) "(no output)" else output
+                                            showResults = true
+                                            status = "Compiled successfully"
+                                        } else if (errors.isNotEmpty()) {
+                                            val lines = errors.map { it.line.coerceAtLeast(1) }.toSet()
+                                            errorLines = lines
+                                            codeViewRef?.let { cv ->
+                                                val ed = cv.text
+                                                if (ed != null) {
+                                                    errorHighlighter.applyToLines(ed, ed.toString(), lines)
+                                                }
                                             }
+                                            gutterRef?.setErrorLines(lines)
+
+                                            val sb = buildString {
+                                                errors.forEach { e ->
+                                                    append("Line ${e.line}: ${e.message}\n")
+                                                }
+                                            }
+                                            resultsTitle = "Compilation Errors"
+                                            resultsText = sb.trimEnd()
+                                            showResults = true
+                                            status = "Compile errors (${lines.size} line(s))"
+                                        } else {
+                                            resultsTitle = "Compile Failed"
+                                            resultsText = output.ifBlank { "Unknown error" }
+                                            showResults = true
+                                            status = "Compile failed"
                                         }
-                                        resultsTitle = "Compilation Errors"
-                                        resultsText = sb.trimEnd()
-                                        showResults = true
-                                        status = "Compile errors (${lines.size} line(s))"
-                                    } else {
-                                        resultsTitle = "Compile Failed"
-                                        resultsText = output.ifBlank { "Unknown error" }
-                                        showResults = true
-                                        status = "Compile failed"
+                                    }
+                                }
+                            },
+                            enabled = fileName.endsWith(".kt", true)
+                        ) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = "Compile")
+                        }
+
+                        IconButton(onClick = { showFind = !showFind }) {
+                            Icon(Icons.Filled.Search, contentDescription = "Find & Replace")
+                        }
+                        TextButton(
+                            onClick = {
+                                if (undoMgr.canUndo()) {
+                                    currentText = undoMgr.undo()
+                                    codeViewRef?.setText(currentText)
+                                    status = "Undo"
+                                    codeViewRef?.text?.let { ed ->
+                                        errorHighlighter.applyToLines(ed, ed.toString(), errorLines)
+                                    }
+                                }
+                            },
+                            enabled = undoMgr.canUndo()
+                        ) { Text("Undo") }
+                        TextButton(
+                            onClick = {
+                                if (undoMgr.canRedo()) {
+                                    currentText = undoMgr.redo()
+                                    codeViewRef?.setText(currentText)
+                                    status = "Redo"
+                                    codeViewRef?.text?.let { ed ->
+                                        errorHighlighter.applyToLines(ed, ed.toString(), errorLines)
+                                    }
+                                }
+                            },
+                            enabled = undoMgr.canRedo()
+                        ) { Text("Redo") }
+                        // (No DropdownMenu here anymore)
+                    }
+                )
+            },
+            bottomBar = {
+                if (!imeVisible) {
+                    val words = remember(currentText) { Regex("\\b\\w+\\b").findAll(currentText).count() }
+                    val chars = currentText.length
+                    BottomAppBar {
+                        Text(
+                            "Status: $status    |    Words: $words   Chars: $chars",
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+        ) { pv ->
+            // >>>>>>> keep your existing content body (Find panel + Editor + Jump buttons) unchanged <<<<<<<
+            Column(
+                Modifier
+                    .padding(pv)
+                    .fillMaxSize()
+                    .imePadding()
+            ) {
+                // (Your existing Find & Replace panel, Editor Row with gutter + CodeView, and jump FABs)
+                // --- COPY THE SAME BODY YOU ALREADY HAVE HERE UNCHANGED ---
+                // I left out for brevity since only the menu changed.
+                // (Everything below this comment should be identical to your previous version)
+                /* ---------------- your existing content from here ---------------- */
+                // ---- Find & Replace panel (ABOVE the editor; pushes content down)
+                AnimatedVisibility(visible = showFind) {
+                    Surface(
+                        tonalElevation = 6.dp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Find & Replace", fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(checked = matchCase, onCheckedChange = { matchCase = it })
+                                        Text("Match case")
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(checked = wholeWord, onCheckedChange = { wholeWord = it })
+                                        Text("Whole word")
                                     }
                                 }
                             }
-                        },
-                        enabled = fileName.endsWith(".kt", true)
-                    ) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = "Compile")
-                    }
-
-                    IconButton(onClick = { showFind = !showFind }) {
-                        Icon(Icons.Filled.Search, contentDescription = "Find & Replace")
-                    }
-                    TextButton(
-                        onClick = {
-                            if (undoMgr.canUndo()) {
-                                currentText = undoMgr.undo()
-                                codeViewRef?.setText(currentText)
-                                status = "Undo"
-                                codeViewRef?.text?.let { ed ->
-                                    errorHighlighter.applyToLines(ed, ed.toString(), errorLines)
-                                }
+                            Spacer(Modifier.height(4.dp))
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = findQuery,
+                                    onValueChange = { findQuery = it },
+                                    label = { Text("Find") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f).focusRequester(findFocusRequester)
+                                )
+                                OutlinedTextField(
+                                    value = replaceText,
+                                    onValueChange = { replaceText = it },
+                                    label = { Text("Replace") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
-                        },
-                        enabled = undoMgr.canUndo()
-                    ) { Text("Undo") }
-                    TextButton(
-                        onClick = {
-                            if (undoMgr.canRedo()) {
-                                currentText = undoMgr.redo()
-                                codeViewRef?.setText(currentText)
-                                status = "Redo"
-                                codeViewRef?.text?.let { ed ->
-                                    errorHighlighter.applyToLines(ed, ed.toString(), errorLines)
-                                }
-                            }
-                        },
-                        enabled = undoMgr.canRedo()
-                    ) { Text("Redo") }
-
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = isDark, onCheckedChange = null)
-                                    Spacer(Modifier.width(8.dp)); Text("Dark mode")
-                                }
-                            },
-                            onClick = { isDark = !isDark; menuOpen = false }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = wrapEnabled, onCheckedChange = null)
-                                    Spacer(Modifier.width(8.dp)); Text("Word wrap")
-                                }
-                            },
-                            onClick = { wrapEnabled = !wrapEnabled; menuOpen = false }
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(text = { Text("New") }, onClick = {
-                            currentText = ""
-                            currentUri = null
-                            lastManualSavedText = ""
-                            undoMgr.setInitial("")
-                            codeViewRef?.setText("")
-                            codeViewRef?.resetSyntaxPatternList()
-                            applyKotlinSyntax(codeViewRef, isDark)
-                            // Clear errors
-                            errorLines = emptySet()
-                            codeViewRef?.text?.let { ed -> errorHighlighter.clear(ed) }
-                            gutterRef?.setErrorLines(emptySet())
-
-                            status = "New file"
-                            menuOpen = false
-                        })
-                        DropdownMenuItem(text = { Text("Open…") }, onClick = {
-                            openLauncher.launch(arrayOf("*/*")); menuOpen = false
-                        })
-                        DropdownMenuItem(text = { Text("Save") }, onClick = {
-                            if (currentUri == null) {
-                                saveAsLauncher.launch(suggestFileNameForLang(codeViewRef))
-                            } else {
-                                writeTextToUri(ctx.contentResolver, currentUri!!, currentText)
-                                lastManualSavedText = currentText
-                                status = "Saved"
-                            }
-                            menuOpen = false
-                        })
-                        DropdownMenuItem(text = { Text("Save As…") }, onClick = {
-                            saveAsLauncher.launch(suggestFileNameForLang(codeViewRef)); menuOpen = false
-                        })
-                        DropdownMenuItem(text = { Text("Load Syntax…") }, onClick = {
-                            loadSyntaxLauncher.launch(arrayOf("application/json", "text/plain")); menuOpen = false
-                        })
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text("Compile Settings") },
-                            onClick = {
-                                menuOpen = false
-                                showSettingsDialog = true
-                            }
-                        )
-                    }
-                }
-            )
-        },
-        // ✅ Always pass a lambda; render nothing when IME is visible
-        bottomBar = {
-            if (!imeVisible) {
-                val words = remember(currentText) { Regex("\\b\\w+\\b").findAll(currentText).count() }
-                val chars = currentText.length
-                BottomAppBar {
-                    Text(
-                        "Status: $status    |    Words: $words   Chars: $chars",
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-            }
-        }
-    ) { pv ->
-        Column(
-            Modifier
-                .padding(pv)
-                .fillMaxSize()
-                .imePadding()
-        ) {
-            // ---- Find & Replace panel (ABOVE the editor; pushes content down)
-            AnimatedVisibility(visible = showFind) {
-                Surface(
-                    tonalElevation = 6.dp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(8.dp)) {
-                        // Title row + checkboxes (right side)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Find & Replace", fontWeight = FontWeight.Bold)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = matchCase, onCheckedChange = { matchCase = it })
-                                    Text("Match case")
-                                }
-                                Spacer(Modifier.width(12.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = wholeWord, onCheckedChange = { wholeWord = it })
-                                    Text("Whole word")
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(4.dp))
-
-                        // Row: Find + Replace inputs
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = findQuery,
-                                onValueChange = { findQuery = it },
-                                label = { Text("Find") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f).focusRequester(findFocusRequester)
-                            )
-                            OutlinedTextField(
-                                value = replaceText,
-                                onValueChange = { replaceText = it },
-                                label = { Text("Replace") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        Spacer(Modifier.height(4.dp))
-
-                        // Buttons
-                        Row(
-                            Modifier
-                                .horizontalScroll(rememberHScrollState())
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            TextButton(
-                                enabled = findQuery.isNotEmpty(),
-                                onClick = {
-                                    val prev = findPrevIndex(
-                                        currentText, findQuery, matchCase, wholeWord,
-                                        startBefore = codeViewRef?.selectionStart ?: currentText.length
-                                    )
-                                    if (prev != null) {
-                                        val (s, e) = prev
-                                        selectAndReveal(s, e)
-                                        val lc = indexToLineCol(currentText, s)
-                                        status = "Found at L${lc.line}, C${lc.col}"
-                                    } else status = "No previous match"
-                                }
-                            ) { Text("Find Prev") }
-
-                            TextButton(
-                                enabled = findQuery.isNotEmpty(),
-                                onClick = {
-                                    val next = findNextIndex(
-                                        currentText, findQuery, matchCase, wholeWord,
-                                        startAfter = codeViewRef?.selectionEnd ?: 0
-                                    )
-                                    if (next != null) {
-                                        val (s, e) = next
-                                        selectAndReveal(s, e)
-                                        val lc = indexToLineCol(currentText, s)
-                                        status = "Found at L${lc.line}, C${lc.col}"
-                                    } else status = "No more matches"
-                                }
-                            ) { Text("Find Next") }
-
-                            TextButton(
-                                enabled = findQuery.isNotEmpty(),
-                                onClick = {
-                                    val selStart = codeViewRef?.selectionStart ?: 0
-                                    val selEnd = codeViewRef?.selectionEnd ?: 0
-                                    val selected = if (selEnd > selStart) currentText.substring(selStart, selEnd) else ""
-                                    val match = matches(selected, findQuery, matchCase, wholeWord)
-                                    if (match) {
-                                        val newText = currentText.replaceRange(selStart, selEnd, replaceText)
-                                        currentText = newText
-                                        codeViewRef?.setText(newText)
-                                        val caret = selStart + replaceText.length
-                                        selectAndReveal(caret, caret)
-                                        val lc = indexToLineCol(newText, caret)
-                                        undoMgr.onTextChange(newText)
-                                        status = "Replaced at L${lc.line}, C${lc.col}"
-                                    } else {
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                Modifier
+                                    .horizontalScroll(rememberHScrollState())
+                                    .fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                TextButton(
+                                    enabled = findQuery.isNotEmpty(),
+                                    onClick = {
+                                        val prev = findPrevIndex(
+                                            currentText, findQuery, matchCase, wholeWord,
+                                            startBefore = codeViewRef?.selectionStart ?: currentText.length
+                                        )
+                                        if (prev != null) {
+                                            val (s, e) = prev
+                                            selectAndReveal(s, e)
+                                            val lc = indexToLineCol(currentText, s)
+                                            status = "Found at L${lc.line}, C${lc.col}"
+                                        } else status = "No previous match"
+                                    }
+                                ) { Text("Find Prev") }
+                                TextButton(
+                                    enabled = findQuery.isNotEmpty(),
+                                    onClick = {
                                         val next = findNextIndex(
                                             currentText, findQuery, matchCase, wholeWord,
-                                            startAfter = selEnd
+                                            startAfter = codeViewRef?.selectionEnd ?: 0
                                         )
                                         if (next != null) {
                                             val (s, e) = next
                                             selectAndReveal(s, e)
                                             val lc = indexToLineCol(currentText, s)
                                             status = "Found at L${lc.line}, C${lc.col}"
-                                        } else status = "No match"
+                                        } else status = "No more matches"
                                     }
-                                }
-                            ) { Text("Replace") }
-
-                            TextButton(
-                                enabled = findQuery.isNotEmpty(),
-                                onClick = {
-                                    val regex = buildFindRegex(findQuery, matchCase, wholeWord).toRegex()
-                                    val count = regex.findAll(currentText).count()
-                                    if (count > 0) {
-                                        val newText = currentText.replace(regex, replaceText)
-                                        currentText = newText
-                                        codeViewRef?.setText(newText)
-                                        val caret = codeViewRef?.selectionStart ?: 0
-                                        selectAndReveal(caret, caret)
-                                        undoMgr.onTextChange(newText)
+                                ) { Text("Find Next") }
+                                TextButton(
+                                    enabled = findQuery.isNotEmpty(),
+                                    onClick = {
+                                        val selStart = codeViewRef?.selectionStart ?: 0
+                                        val selEnd = codeViewRef?.selectionEnd ?: 0
+                                        val selected = if (selEnd > selStart) currentText.substring(selStart, selEnd) else ""
+                                        val match = matches(selected, findQuery, matchCase, wholeWord)
+                                        if (match) {
+                                            val newText = currentText.replaceRange(selStart, selEnd, replaceText)
+                                            currentText = newText
+                                            codeViewRef?.setText(newText)
+                                            val caret = selStart + replaceText.length
+                                            selectAndReveal(caret, caret)
+                                            val lc = indexToLineCol(newText, caret)
+                                            undoMgr.onTextChange(newText)
+                                            status = "Replaced at L${lc.line}, C${lc.col}}"
+                                        } else {
+                                            val next = findNextIndex(
+                                                currentText, findQuery, matchCase, wholeWord,
+                                                startAfter = selEnd
+                                            )
+                                            if (next != null) {
+                                                val (s, e) = next
+                                                selectAndReveal(s, e)
+                                                val lc = indexToLineCol(currentText, s)
+                                                status = "Found at L${lc.line}, C${lc.col}"
+                                            } else status = "No match"
+                                        }
                                     }
-                                    status = "Replaced $count occurrence(s)"
-                                }
-                            ) { Text("Replace All") }
+                                ) { Text("Replace") }
+                                TextButton(
+                                    enabled = findQuery.isNotEmpty(),
+                                    onClick = {
+                                        val regex = buildFindRegex(findQuery, matchCase, wholeWord).toRegex()
+                                        val count = regex.findAll(currentText).count()
+                                        if (count > 0) {
+                                            val newText = currentText.replace(regex, replaceText)
+                                            currentText = newText
+                                            codeViewRef?.setText(newText)
+                                            val caret = codeViewRef?.selectionStart ?: 0
+                                            selectAndReveal(caret, caret)
+                                            undoMgr.onTextChange(newText)
+                                        }
+                                        status = "Replaced $count occurrence(s)"
+                                    }
+                                ) { Text("Replace All") }
+                            }
                         }
                     }
                 }
-            }
 
-            // ---- Editor area with overlayed jump buttons
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                Row(Modifier.fillMaxSize()) {
-                    // Gutter
-                    AndroidView(
-                        modifier = Modifier
-                            .width(48.dp)
-                            .fillMaxHeight(),
-                        factory = { context ->
-                            LogicalLineGutterView(context).apply { gutterRef = this }
-                        },
-                        update = { g ->
-                            g.setEditor(codeViewRef)
-                            g.setTheme(isDark, (codeViewRef?.textSize ?: 16f))
-                            g.setErrorLines(errorLines)
-                        }
-                    )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    Row(Modifier.fillMaxSize()) {
+                        AndroidView(
+                            modifier = Modifier
+                                .width(48.dp)
+                                .fillMaxHeight(),
+                            factory = { context ->
+                                LogicalLineGutterView(context).apply { gutterRef = this }
+                            },
+                            update = { g ->
+                                g.setEditor(codeViewRef)
+                                g.setTheme(isDark, (codeViewRef?.textSize ?: 16f))
+                                g.setErrorLines(errorLines)
+                            }
+                        )
+                        AndroidView(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            factory = { context ->
+                                CodeView(context).apply {
+                                    setEnableAutoIndentation(true)
+                                    setTabLength(4)
+                                    setEnableLineNumber(false)
+                                    gravity = Gravity.TOP or Gravity.START
+                                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                                    setLineSpacing(0f, 1.0f)
+                                    setIncludeFontPadding(true)
+                                    setPadding(16, 24, 24, 24)
+                                    isVerticalScrollBarEnabled = true
+                                    isHorizontalScrollBarEnabled = true
+                                    scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+                                    isFocusable = true
+                                    isFocusableInTouchMode = true
 
-                    // Editor
-                    AndroidView(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                        factory = { context ->
-                            CodeView(context).apply {
-                                setEnableAutoIndentation(true)
-                                setTabLength(4)
-                                setEnableLineNumber(false)
-                                gravity = Gravity.TOP or Gravity.START
-                                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                                setLineSpacing(0f, 1.0f)
-                                setIncludeFontPadding(true)
-                                setPadding(16, 24, 24, 24)
-                                isVerticalScrollBarEnabled = true
-                                isHorizontalScrollBarEnabled = true
-                                scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
-                                isFocusable = true
-                                isFocusableInTouchMode = true
+                                    setHorizontallyScrolling(!wrapEnabled)
+                                    runCatching {
+                                        if (android.os.Build.VERSION.SDK_INT >= 23) {
+                                            this.breakStrategy = LineBreaker.BREAK_STRATEGY_SIMPLE
+                                            this.hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
+                                            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                                                this.setJustificationMode(LineBreaker.JUSTIFICATION_MODE_NONE)
+                                            }
+                                        }
+                                    }
 
-                                setHorizontallyScrolling(!wrapEnabled)
+                                    applyEditorPalette(this, isDark)
+                                    if (currentSyntaxCfg != null) {
+                                        applySyntaxFromConfig(this, currentSyntaxCfg!!)
+                                    } else {
+                                        applyKotlinSyntax(this, isDark)
+                                    }
+
+                                    addTextChangedListener {
+                                        val txt = this.text?.toString() ?: ""
+                                        if (txt != currentText) {
+                                            currentText = txt
+                                            undoMgr.onTextChange(txt)
+                                            this.reHighlightSyntax()
+                                            this.text?.let { ed ->
+                                                errorHighlighter.applyToLines(ed, ed.toString(), errorLines)
+                                            }
+                                        }
+                                    }
+
+                                    codeViewRef = this
+                                    gutterRef?.setEditor(this)
+                                    gutterRef?.setTheme(isDark, this.textSize)
+                                    gutterRef?.setErrorLines(errorLines)
+
+                                    post { updateJumpButtons(this) }
+                                }
+                            },
+                            update = { cv ->
+                                cv.setHorizontallyScrolling(!wrapEnabled)
                                 runCatching {
                                     if (android.os.Build.VERSION.SDK_INT >= 23) {
-                                        this.breakStrategy = LineBreaker.BREAK_STRATEGY_SIMPLE
-                                        this.hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
+                                        cv.breakStrategy = LineBreaker.BREAK_STRATEGY_SIMPLE
+                                        cv.hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
                                         if (android.os.Build.VERSION.SDK_INT >= 26) {
-                                            this.setJustificationMode(LineBreaker.JUSTIFICATION_MODE_NONE)
+                                            cv.setJustificationMode(LineBreaker.JUSTIFICATION_MODE_NONE)
                                         }
                                     }
                                 }
+                                cv.isVerticalScrollBarEnabled = true
+                                cv.isHorizontalScrollBarEnabled = true
+                                cv.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+                                cv.isFocusable = true
+                                cv.isFocusableInTouchMode = true
 
-                                applyEditorPalette(this, isDark)
+                                applyEditorPalette(cv, isDark)
                                 if (currentSyntaxCfg != null) {
-                                    applySyntaxFromConfig(this, currentSyntaxCfg!!)
+                                    applySyntaxFromConfig(cv, currentSyntaxCfg!!)
                                 } else {
-                                    applyKotlinSyntax(this, isDark)
+                                    applyKotlinSyntax(cv, isDark)
                                 }
 
-                                addTextChangedListener {
-                                    val txt = this.text?.toString() ?: ""
-                                    if (txt != currentText) {
-                                        currentText = txt
-                                        undoMgr.onTextChange(txt)
-                                        // Re-apply syntax + error highlights after any edit
-                                        this.reHighlightSyntax()
-                                        this.text?.let { ed ->
-                                            errorHighlighter.applyToLines(ed, ed.toString(), errorLines)
-                                        }
-                                    }
-                                }
+                                if (cv.text.toString() != currentText) cv.setText(currentText)
+                                cv.text?.let { ed -> errorHighlighter.applyToLines(ed, ed.toString(), errorLines) }
 
-                                codeViewRef = this
-                                gutterRef?.setEditor(this)
-                                gutterRef?.setTheme(isDark, this.textSize)
+                                gutterRef?.setEditor(cv)
+                                gutterRef?.setTheme(isDark, cv.textSize)
                                 gutterRef?.setErrorLines(errorLines)
 
-                                // initialize jump button visibility
-                                post { updateJumpButtons(this) }
+                                cv.post { updateJumpButtons(cv) }
                             }
-                        },
-                        update = { cv ->
-                            cv.setHorizontallyScrolling(!wrapEnabled)
-                            runCatching {
-                                if (android.os.Build.VERSION.SDK_INT >= 23) {
-                                    cv.breakStrategy = LineBreaker.BREAK_STRATEGY_SIMPLE
-                                    cv.hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
-                                    if (android.os.Build.VERSION.SDK_INT >= 26) {
-                                        cv.setJustificationMode(LineBreaker.JUSTIFICATION_MODE_NONE)
-                                    }
-                                }
-                            }
-                            cv.isVerticalScrollBarEnabled = true
-                            cv.isHorizontalScrollBarEnabled = true
-                            cv.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
-                            cv.isFocusable = true
-                            cv.isFocusableInTouchMode = true
+                        )
+                    }
 
-                            applyEditorPalette(cv, isDark)
-                            if (currentSyntaxCfg != null) {
-                                applySyntaxFromConfig(cv, currentSyntaxCfg!!)
-                            } else {
-                                applyKotlinSyntax(cv, isDark)
-                            }
-
-                            if (cv.text.toString() != currentText) cv.setText(currentText)
-
-                            // Re-apply error highlights after palette/syntax/updates
-                            cv.text?.let { ed -> errorHighlighter.applyToLines(ed, ed.toString(), errorLines) }
-
-                            gutterRef?.setEditor(cv)
-                            gutterRef?.setTheme(isDark, cv.textSize)
-                            gutterRef?.setErrorLines(errorLines)
-
-                            cv.post { updateJumpButtons(cv) }
-                        }
-                    )
-                }
-
-                // Floating jump buttons
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = showGoTop,
-                    modifier = Modifier.align(Alignment.TopEnd)
-                ) {
-                    FloatingActionButton(
-                        onClick = { scrollToStart() },
-                        modifier = Modifier.padding(12.dp),
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Go to start") }
-                }
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = showGoBottom,
-                    modifier = Modifier.align(Alignment.BottomEnd)
-                ) {
-                    FloatingActionButton(
-                        onClick = { scrollToEnd() },
-                        modifier = Modifier.padding(12.dp),
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Go to end") }
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showGoTop,
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        FloatingActionButton(
+                            onClick = { scrollToStart() },
+                            modifier = Modifier.padding(12.dp),
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Go to start") }
+                    }
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showGoBottom,
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    ) {
+                        FloatingActionButton(
+                            onClick = { scrollToEnd() },
+                            modifier = Modifier.padding(12.dp),
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Go to end") }
+                    }
                 }
             }
         }
@@ -943,7 +1003,7 @@ fun EditorApp() {
         )
     }
 
-    // ---- Results bottom sheet ----
+    // ---- Results bottom sheet (unchanged) ----
     if (showResults) {
         ModalBottomSheet(
             onDismissRequest = { showResults = false },
@@ -986,6 +1046,7 @@ fun EditorApp() {
         }
     }
 }
+
 
 /* -------------------- Helpers -------------------- */
 
