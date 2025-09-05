@@ -105,9 +105,9 @@ cd TextEditorApp-MAD
 
 ## 👥 Contributions
 
-- **H D D H Liyanage - 23020504**: Editor core, undo/redo, file handling
-- **H D D H Liyanage - 23020504**: Syntax highlighting, JSON config
-- **H D D H Liyanage - 23020504**: Compiler bridge, Flask server, ADB setup
+- **H D D H Liyanage      - 23020504**: App logic, Compiling process, Github Repository
+- **P. Vidurshan          - 23021098**: Implemented the server, App UI
+- **A.M.W.M.N.S Amarakoon - 23020067**: App UI, Documenting
 
 ---
 
